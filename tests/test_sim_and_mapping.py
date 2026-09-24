@@ -1,9 +1,11 @@
 """Acceptance tests for the simulation and mapping domains."""
 import json
+import math
 
 import pytest
 
 from aegisrover.core.types import GridShape, Pose2, Twist2, Vec2
+from aegisrover.mapping.inflation import distance_field, inflate
 from aegisrover.mapping.occupancy import LogOddsGrid
 from aegisrover.mapping.revisions import MapFormatError, MapRepository
 from aegisrover.sim.engine import SimulationEngine, SimulationError
@@ -186,6 +188,31 @@ def test_occupancy_payload_roundtrip():
     restored = LogOddsGrid.from_payload(g.to_payload())
     assert restored.probability(2, 2) == pytest.approx(g.probability(2, 2))
     assert restored.revision == g.revision
+
+
+# ---------------------------------------------------------------------------- inflation
+def test_distance_field_is_euclidean_in_every_direction():
+    field = distance_field(11, 11, [(5, 5)], 0.5)
+    assert field[5][6] == pytest.approx(0.5)
+    assert field[6][6] == pytest.approx(math.sqrt(2) * 0.5)   # diagonal, not 1 cell
+    assert field[6][7] == pytest.approx(math.sqrt(5) * 0.5)
+    assert field[9][9] == pytest.approx(math.sqrt(32) * 0.5)
+    assert field[5][5] == 0.0
+
+
+def test_inflation_boundary_is_circular():
+    radius = 2.1
+    field = distance_field(11, 11, [(5, 5)], 0.5)
+    cost = inflate(field, radius)
+    for y in range(11):
+        for x in range(11):
+            inside = math.hypot(x - 5, y - 5) * 0.5 < radius
+            assert (cost[y][x] > 0.0) == inside
+
+
+def test_distance_field_without_obstacles_is_infinite():
+    field = distance_field(4, 3, [], 1.0)
+    assert all(v == math.inf for row in field for v in row)
 
 
 # ---------------------------------------------------------------------------- revisions
